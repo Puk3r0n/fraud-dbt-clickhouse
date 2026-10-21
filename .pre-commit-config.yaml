@@ -1,0 +1,19 @@
+exclude: ^dbt/(target|dbt_packages|logs|\.venv)/
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml
+  - repo: https://github.com/sqlfluff/sqlfluff
+    rev: 4.4.0
+    hooks:
+      - id: sqlfluff-lint
+        files: ^dbt/(models|tests)/.*\.sql$
+        args: [--dialect, clickhouse, --config, dbt/.sqlfluff]
+        additional_dependencies: ["dbt-core==1.12.6", "dbt-clickhouse==1.10.3", "sqlfluff-templater-dbt==4.4.0"]
+      - id: sqlfluff-fix
+        files: ^dbt/(models|tests)/.*\.sql$
+        args: [--dialect, clickhouse, --config, dbt/.sqlfluff]
+        additional_dependencies: ["dbt-core==1.12.6", "dbt-clickhouse==1.10.3", "sqlfluff-templater-dbt==4.4.0"]

@@ -1,0 +1,104 @@
+version: 2
+
+models:
+  - name: stg_transactions
+    description: >
+      Очищенные транзакции: без полных дублей, с нормализованными строками, суррогатными ключами
+      транзакции и клиента, календарными полями, расстоянием до мерчанта и сегментом суммы.
+      Единственный источник для всех витрин.
+    data_tests:
+      - dbt_expectations.expect_table_row_count_to_be_between:
+          arguments:
+            min_value: 1
+    columns:
+      - name: transaction_id
+        description: Суррогатный ключ транзакции, md5 от всех полей сырой строки.
+        data_tests:
+          - not_null
+          - unique
+      - name: customer_id
+        description: Суррогатный ключ клиента, md5 от имени, фамилии, улицы и индекса.
+        data_tests:
+          - not_null
+      - name: transaction_at
+        description: Время транзакции.
+        data_tests:
+          - not_null
+      - name: transaction_date
+        description: Дата транзакции.
+        data_tests:
+          - not_null
+      - name: transaction_hour
+        description: Час транзакции, 0-23.
+        data_tests:
+          - dbt_utils.accepted_range:
+              arguments:
+                min_value: 0
+                max_value: 23
+      - name: day_of_week
+        description: День недели по ISO, 1 - понедельник, 7 - воскресенье (dbt_date.day_of_week).
+        data_tests:
+          - dbt_utils.accepted_range:
+              arguments:
+                min_value: 1
+                max_value: 7
+      - name: merchant
+        description: Мерчант без технического префикса fraud_.
+        data_tests:
+          - not_null
+      - name: category
+        description: Категория покупки.
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: [entertainment, food_dining, gas_transport, grocery_net, grocery_pos, health_fitness,
+                         home, kids_pets, misc_net, misc_pos, personal_care, shopping_net, shopping_pos, travel]
+      - name: amount
+        description: Сумма транзакции в долларах, округлена до центов.
+        data_tests:
+          - not_null
+          - dbt_expectations.expect_column_values_to_be_between:
+              arguments:
+                min_value: 0
+                strictly: true
+      - name: amount_bucket
+        description: Сегмент суммы из макроса amount_bucket.
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: [micro, small, medium, large, very_large]
+      - name: is_large
+        description: 1, если сумма не меньше var large_amount_threshold (500 долларов).
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: [0, 1]
+                quote: false
+      - name: gender
+        description: Пол клиента.
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: [M, F]
+      - name: state_code
+        description: Код штата клиента.
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('states')
+                field: state_code
+      - name: distance_km
+        description: Расстояние от клиента до мерчанта по большой окружности, км.
+        data_tests:
+          - dbt_expectations.expect_column_values_to_be_between:
+              arguments:
+                min_value: 0
+                max_value: 20000
+      - name: is_fraud
+        description: Признак фрода, 1 - мошенническая транзакция.
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: [0, 1]
+                quote: false

@@ -1,0 +1,239 @@
+version: 2
+
+models:
+  - name: mart_daily_state_metrics
+    description: Дневные метрики по штатам. Одна строка - пара (дата, штат).
+    data_tests:
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns: [transaction_date, state_code]
+    columns:
+      - name: transaction_date
+        description: Дата.
+        data_tests: [not_null]
+      - name: state_code
+        description: Код штата.
+        data_tests: [not_null]
+      - name: state_name
+        description: Название штата из seed states.
+        data_tests: [not_null]
+      - name: region
+        description: Регион США из seed states.
+      - name: tx_count
+        description: Число транзакций за день в штате.
+        data_tests:
+          - dbt_utils.accepted_range:
+              arguments: {min_value: 1}
+      - name: total_amount
+        description: Сумма транзакций.
+      - name: avg_amount
+        description: Средний чек.
+      - name: p95_amount
+        description: 95-й перцентиль суммы транзакции.
+      - name: large_tx_count
+        description: Число крупных транзакций (от 500 долларов).
+      - name: large_tx_share_pct
+        description: Доля крупных транзакций, %.
+        data_tests:
+          - dbt_expectations.expect_column_values_to_be_between:
+              arguments: {min_value: 0, max_value: 100}
+      - name: fraud_count
+        description: Число фродовых транзакций.
+      - name: fraud_rate_pct
+        description: Доля фрода, %.
+        data_tests:
+          - dbt_expectations.expect_column_values_to_be_between:
+              arguments: {min_value: 0, max_value: 100}
+
+  - name: mart_fraud_by_category
+    description: Фрод по категориям покупок. Помогает найти категории, где мошенничество встречается чаще и стоит дороже.
+    columns:
+      - name: category
+        description: Категория покупки.
+        data_tests: [not_null, unique]
+      - name: tx_count
+        description: Всего транзакций.
+      - name: fraud_count
+        description: Фродовых транзакций.
+      - name: fraud_rate_pct
+        description: Доля фрода, %.
+        data_tests: [not_null]
+      - name: total_amount
+        description: Сумма всех транзакций.
+      - name: fraud_amount
+        description: Сумма фродовых транзакций.
+      - name: avg_fraud_amount
+        description: Средний чек фродовой транзакции.
+      - name: avg_legit_amount
+        description: Средний чек легитимной транзакции.
+      - name: fraud_amount_share_pct
+        description: Доля фродовых денег в обороте категории, %.
+      - name: fraud_rate_rank
+        description: Место категории по доле фрода, 1 - самая рискованная.
+        data_tests: [not_null, unique]
+
+  - name: mart_fraud_by_state
+    description: Географический срез фрода по штатам США.
+    data_tests:
+      - dbt_expectations.expect_table_row_count_to_equal_other_table:
+          arguments:
+            compare_model: ref('states')
+    columns:
+      - name: state_code
+        description: Код штата.
+        data_tests: [not_null, unique]
+      - name: state_name
+        description: Название штата.
+      - name: region
+        description: Регион США.
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: [Northeast, Midwest, South, West]
+      - name: tx_count
+        description: Всего транзакций.
+      - name: fraud_count
+        description: Фродовых транзакций.
+      - name: fraud_rate_pct
+        description: Доля фрода, %.
+      - name: unique_customers
+        description: Уникальных клиентов.
+      - name: fraud_customers
+        description: Клиентов, у которых был хотя бы один фрод.
+      - name: unique_merchants
+        description: Уникальных мерчантов.
+      - name: total_amount
+        description: Сумма транзакций.
+      - name: fraud_amount
+        description: Сумма фродовых транзакций.
+
+  - name: mart_customer_risk_profile
+    description: >
+      Профиль риска клиента. HIGH - доля фрода не ниже 5%, MEDIUM - был хотя бы один фрод
+      или крупные траты больше чем в 10% транзакций, LOW - остальные.
+    columns:
+      - name: customer_id
+        description: Суррогатный ключ клиента.
+        data_tests: [not_null, unique]
+      - name: first_name
+        description: Имя.
+      - name: last_name
+        description: Фамилия.
+      - name: gender
+        description: Пол.
+      - name: state_code
+        description: Штат.
+      - name: city
+        description: Город.
+      - name: tx_count
+        description: Число транзакций клиента.
+      - name: total_amount
+        description: Сумма транзакций.
+      - name: avg_amount
+        description: Средний чек.
+      - name: max_amount
+        description: Самая крупная транзакция.
+      - name: fraud_count
+        description: Число фродовых транзакций.
+      - name: fraud_rate_pct
+        description: Доля фрода у клиента, %.
+      - name: large_tx_share_pct
+        description: Доля крупных транзакций, %.
+      - name: unique_merchants
+        description: У скольких мерчантов покупал клиент.
+      - name: first_transaction_at
+        description: Первая транзакция.
+      - name: last_transaction_at
+        description: Последняя транзакция.
+      - name: active_days
+        description: Число дней с транзакциями.
+      - name: risk_level
+        description: Уровень риска клиента.
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: [HIGH, MEDIUM, LOW]
+
+  - name: mart_hourly_fraud_pattern
+    description: >
+      Фрод по дню недели и часу. risk_index - во сколько раз доля фрода в окне выше средней,
+      окна с risk_index от 2 помечены как рискованные.
+    data_tests:
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns: [day_of_week, transaction_hour]
+      - dbt_expectations.expect_table_row_count_to_equal:
+          arguments:
+            value: 168
+    columns:
+      - name: day_of_week
+        description: День недели по ISO, 1 - понедельник.
+      - name: day_name
+        description: Название дня недели (dbt_date.day_name).
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: [Monday, Tuesday, Wednesday, Thursday, Friday, Saturday, Sunday]
+      - name: transaction_hour
+        description: Час.
+      - name: tx_count
+        description: Число транзакций в окне.
+      - name: fraud_count
+        description: Число фродовых транзакций в окне.
+      - name: fraud_rate_pct
+        description: Доля фрода в окне, %.
+      - name: avg_amount
+        description: Средний чек в окне.
+      - name: avg_fraud_amount
+        description: Средний чек фрода в окне.
+      - name: risk_index
+        description: Отношение доли фрода в окне к средней.
+      - name: is_high_risk_window
+        description: 1, если risk_index не меньше 2.
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: [0, 1]
+                quote: false
+
+  - name: mart_merchant_analytics
+    description: >
+      Аналитика по мерчантам. is_suspicious = 1, если у мерчанта не меньше 100 транзакций
+      и доля фрода не ниже 2% (vars suspicious_merchant_min_tx и suspicious_merchant_fraud_rate).
+    columns:
+      - name: merchant
+        description: Мерчант.
+        data_tests: [not_null, unique]
+      - name: main_category
+        description: Самая частая категория покупок у мерчанта.
+      - name: tx_count
+        description: Число транзакций.
+      - name: turnover
+        description: Оборот мерчанта.
+      - name: avg_amount
+        description: Средний чек.
+      - name: fraud_count
+        description: Число фродовых транзакций.
+      - name: fraud_rate_pct
+        description: Доля фрода, %.
+        data_tests:
+          - dbt_expectations.expect_column_values_to_be_between:
+              arguments: {min_value: 0, max_value: 100}
+      - name: fraud_amount
+        description: Сумма фродовых транзакций.
+      - name: unique_customers
+        description: Уникальных клиентов.
+      - name: unique_states
+        description: В скольких штатах есть клиенты мерчанта.
+      - name: first_transaction_at
+        description: Первая транзакция.
+      - name: last_transaction_at
+        description: Последняя транзакция.
+      - name: is_suspicious
+        description: Флаг подозрительного мерчанта.
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: [0, 1]
+                quote: false

@@ -1,0 +1,82 @@
+version: 2
+
+unit_tests:
+  - name: test_stg_transactions_normalizes_and_buckets
+    description: >
+      Staging снимает префикс fraud_ у мерчанта, нормализует регистр, считает день недели по ISO,
+      сегмент суммы, флаг крупной транзакции и схлопывает полный дубль.
+    model: stg_transactions
+    given:
+      - input: source('transactions_db', 'transactions')
+        format: dict
+        rows:
+          - {transaction_time: "2024-01-07 23:15:00", merch: "fraud_Kirlin and Sons", cat_id: "Shopping_Net", amount: 5.0,
+             name_1: "Ann", name_2: "Lee", gender: "f", street: "1 Main St", one_city: "Austin", us_state: "tx",
+             post_code: "73301", lat: 30.0, lon: -97.0, population_city: 1000, jobs: "Engineer",
+             merchant_lat: 30.0, merchant_lon: -97.0, target: 0}
+          - {transaction_time: "2024-01-08 10:00:00", merch: "fraud_Bins Ltd", cat_id: "travel", amount: 750.0,
+             name_1: "Bob", name_2: "Ray", gender: "M", street: "2 Oak St", one_city: "Reno", us_state: "NV",
+             post_code: "89501", lat: 39.5, lon: -119.8, population_city: 2000, jobs: "Driver",
+             merchant_lat: 39.6, merchant_lon: -119.8, target: 1}
+          - {transaction_time: "2024-01-08 10:00:00", merch: "fraud_Bins Ltd", cat_id: "travel", amount: 750.0,
+             name_1: "Bob", name_2: "Ray", gender: "M", street: "2 Oak St", one_city: "Reno", us_state: "NV",
+             post_code: "89501", lat: 39.5, lon: -119.8, population_city: 2000, jobs: "Driver",
+             merchant_lat: 39.6, merchant_lon: -119.8, target: 1}
+    expect:
+      format: dict
+      rows:
+        - {merchant: "Kirlin and Sons", category: "shopping_net", gender: "F", state_code: "TX",
+           day_of_week: 7, transaction_hour: 23, amount_bucket: "micro", is_large: 0, is_fraud: 0}
+        - {merchant: "Bins Ltd", category: "travel", gender: "M", state_code: "NV",
+           day_of_week: 1, transaction_hour: 10, amount_bucket: "very_large", is_large: 1, is_fraud: 1}
+
+  - name: test_customer_risk_levels
+    description: HIGH при доле фрода от 5%, MEDIUM при единичном фроде или частых крупных тратах, иначе LOW.
+    model: mart_customer_risk_profile
+    given:
+      - input: ref('stg_transactions')
+        format: sql
+        rows: |
+          select
+              customer_id, first_name, last_name, gender, state_code, city,
+              toFloat64(amount) as amount, toUInt8(is_fraud) as is_fraud, toUInt8(is_large) as is_large,
+              merchant, toDateTime(transaction_at) as transaction_at, toDate(transaction_at) as transaction_date
+          from values(
+              'customer_id String, first_name String, last_name String, gender String, state_code String,
+               city String, amount Float64, is_fraud UInt8, is_large UInt8, merchant String,
+               transaction_at String',
+              ('high', 'A', 'A', 'F', 'TX', 'Austin', 10, 1, 0, 'm1', '2024-01-01 10:00:00'),
+              ('high', 'A', 'A', 'F', 'TX', 'Austin', 10, 0, 0, 'm1', '2024-01-02 10:00:00'),
+              ('medium', 'B', 'B', 'M', 'NV', 'Reno', 10, 1, 0, 'm1', '2024-01-01 10:00:00'),
+              ('medium', 'B', 'B', 'M', 'NV', 'Reno', 10, 0, 0, 'm2', '2024-01-02 10:00:00'),
+              ('medium', 'B', 'B', 'M', 'NV', 'Reno', 10, 0, 0, 'm2', '2024-01-03 10:00:00'),
+              ('medium', 'B', 'B', 'M', 'NV', 'Reno', 10, 0, 0, 'm2', '2024-01-04 10:00:00'),
+              ('medium', 'B', 'B', 'M', 'NV', 'Reno', 10, 0, 0, 'm2', '2024-01-05 10:00:00'),
+              ('medium', 'B', 'B', 'M', 'NV', 'Reno', 10, 0, 0, 'm2', '2024-01-06 10:00:00'),
+              ('medium', 'B', 'B', 'M', 'NV', 'Reno', 10, 0, 0, 'm2', '2024-01-07 10:00:00'),
+              ('medium', 'B', 'B', 'M', 'NV', 'Reno', 10, 0, 0, 'm2', '2024-01-08 10:00:00'),
+              ('medium', 'B', 'B', 'M', 'NV', 'Reno', 10, 0, 0, 'm2', '2024-01-09 10:00:00'),
+              ('medium', 'B', 'B', 'M', 'NV', 'Reno', 10, 0, 0, 'm2', '2024-01-10 10:00:00'),
+              ('medium', 'B', 'B', 'M', 'NV', 'Reno', 10, 0, 0, 'm2', '2024-01-11 10:00:00'),
+              ('medium', 'B', 'B', 'M', 'NV', 'Reno', 10, 0, 0, 'm2', '2024-01-12 10:00:00'),
+              ('medium', 'B', 'B', 'M', 'NV', 'Reno', 10, 0, 0, 'm2', '2024-01-13 10:00:00'),
+              ('medium', 'B', 'B', 'M', 'NV', 'Reno', 10, 0, 0, 'm2', '2024-01-14 10:00:00'),
+              ('medium', 'B', 'B', 'M', 'NV', 'Reno', 10, 0, 0, 'm2', '2024-01-15 10:00:00'),
+              ('medium', 'B', 'B', 'M', 'NV', 'Reno', 10, 0, 0, 'm2', '2024-01-16 10:00:00'),
+              ('medium', 'B', 'B', 'M', 'NV', 'Reno', 10, 0, 0, 'm2', '2024-01-17 10:00:00'),
+              ('medium', 'B', 'B', 'M', 'NV', 'Reno', 10, 0, 0, 'm2', '2024-01-18 10:00:00'),
+              ('medium', 'B', 'B', 'M', 'NV', 'Reno', 10, 0, 0, 'm2', '2024-01-19 10:00:00'),
+              ('medium', 'B', 'B', 'M', 'NV', 'Reno', 10, 0, 0, 'm2', '2024-01-20 10:00:00'),
+              ('medium', 'B', 'B', 'M', 'NV', 'Reno', 10, 0, 0, 'm2', '2024-01-21 10:00:00'),
+              ('big_spender', 'C', 'C', 'F', 'NY', 'Albany', 900, 0, 1, 'm3', '2024-01-01 10:00:00'),
+              ('big_spender', 'C', 'C', 'F', 'NY', 'Albany', 20, 0, 0, 'm3', '2024-01-02 10:00:00'),
+              ('low', 'D', 'D', 'M', 'CA', 'Fresno', 20, 0, 0, 'm4', '2024-01-01 10:00:00'),
+              ('low', 'D', 'D', 'M', 'CA', 'Fresno', 30, 0, 0, 'm4', '2024-01-02 10:00:00')
+          )
+    expect:
+      format: dict
+      rows:
+        - {customer_id: "high", fraud_count: 1, fraud_rate_pct: 50.0, risk_level: "HIGH"}
+        - {customer_id: "medium", fraud_count: 1, fraud_rate_pct: 4.7619, risk_level: "MEDIUM"}
+        - {customer_id: "big_spender", fraud_count: 0, fraud_rate_pct: 0.0, risk_level: "MEDIUM"}
+        - {customer_id: "low", fraud_count: 0, fraud_rate_pct: 0.0, risk_level: "LOW"}

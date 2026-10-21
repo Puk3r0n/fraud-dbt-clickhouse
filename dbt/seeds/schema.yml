@@ -1,0 +1,21 @@
+version: 2
+
+seeds:
+  - name: states
+    description: Справочник штатов США с регионом по классификации Census Bureau.
+    columns:
+      - name: state_code
+        description: Двухбуквенный код штата, совпадает с us_state в транзакциях.
+        data_tests:
+          - not_null
+          - unique
+      - name: state_name
+        description: Полное название штата.
+        data_tests:
+          - not_null
+      - name: region
+        description: Регион США.
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: ["Northeast", "Midwest", "South", "West"]

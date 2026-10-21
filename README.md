@@ -1,27 +1,34 @@
-# Kafka в ClickHouse
+# dbt-проект поверх ClickHouse
 
-ДЗ 2 по ML System Design. train.csv загружается в Kafka, ClickHouse читает топик через Kafka engine и materialized view в MergeTree. Есть запрос категории наибольшей транзакции по каждому штату и оптимизированная схема хранения.
+ДЗ 4 по ML System Design. Модель данных по транзакциям из ДЗ 2 в каталоге dbt/: source -> staging -> marts.
+
+## Версии
+
+dbt-core 1.12.6, dbt-clickhouse 1.10.3, ClickHouse 24.8, пакеты dbt_utils, dbt_date, dbt_expectations, sqlfluff 4.4.0.
+
+## Витрины
+
+    stg_transactions             очистка, типы, ключи, календарь, amount_bucket
+    mart_daily_state_metrics     дата x штат
+    mart_fraud_by_category       фрод по категориям
+    mart_fraud_by_state          фрод по штатам
+    mart_customer_risk_profile   уровень риска клиента
+    mart_hourly_fraud_pattern    фрод по дню недели и часу
+    mart_merchant_analytics      мерчанты и флаг подозрительности
+
+## Тесты
+
+60 тестов, все проходят, лог - dbt/docs/dbt_test.log: not_null, unique, accepted_values, relationships, dbt_utils, dbt_expectations, 4 singular tests и 2 unit tests.
 
 ## Запуск
 
-Положите train.csv в data/:
+train.csv в data/:
 
-    docker compose up -d
-    docker compose run --rm producer --file /data/train.csv
+    cd dbt
+    make venv && make up && make all && make docs
 
-## Проверка
+Линтинг: dbt/.sqlfluff и .pre-commit-config.yaml, `make lint`.
 
-    docker compose exec -T clickhouse clickhouse-client --format CSVWithNames \
-      < sql/03_query_top_category_by_state.sql > results/top_category_by_state.csv
-    ./scripts/benchmark.sh
+## DAG
 
-Результат запроса - results/top_category_by_state.csv, 51 строка.
-
-## Оптимизация
-
-sql/02_ddl_optimized.sql: DateTime и Decimal вместо строк и Float64, LowCardinality, ORDER BY (us_state, cat_id, transaction_time), партиции по месяцу, кодеки Delta и ZSTD, витрина top_by_state_agg на AggregatingMergeTree.
-
-                              сжато      запрос прочитал     время
-    базовая таблица          58.6 MiB    47.6 MiB            ~22 мс
-    оптимизированная         19.6 MiB    10.5 MiB            ~20 мс
-    витрина top_by_state_agg  1.2 KiB    51 строка, 8 KiB    ~1 мс
+![Lineage](dbt/docs/lineage_dag.jpg)

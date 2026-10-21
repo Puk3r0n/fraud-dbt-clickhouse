@@ -1,0 +1,32 @@
+version: 2
+
+sources:
+  - name: transactions_db
+    description: Сырые транзакции из train.csv соревнования teta-ml-1-2025, загружены в ClickHouse как есть.
+    database: transactions_db
+    schema: transactions_db
+    tables:
+      - name: transactions
+        description: Одна строка - одна карточная транзакция с признаком фрода.
+        columns:
+          - name: transaction_time
+            description: Время транзакции с точностью до минуты.
+            data_tests:
+              - not_null
+          - name: merch
+            description: Мерчант (название с префиксом fraud_).
+          - name: cat_id
+            description: Категория покупки, 14 значений.
+          - name: amount
+            description: Сумма транзакции в долларах.
+            data_tests:
+              - not_null
+          - name: us_state
+            description: Штат клиента.
+          - name: target
+            description: Признак фрода, 1 - мошенническая транзакция.
+            data_tests:
+              - accepted_values:
+                  arguments:
+                    values: [0, 1]
+                    quote: false
